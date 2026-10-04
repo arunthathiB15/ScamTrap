@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScamTrap: check a suspicious message</title>
+<style>
+:root{--bg:#e9edf1;--ink:#101820;--mut:#56606b;--panel:#fff;--line:#c9d1d9;--steel:#26547c;--red:#b3261e;--amber:#9a5b00;--green:#1b6b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1040px;margin:0 auto;padding:32px 20px 56px}
+h1{font:700 clamp(28px,5vw,44px)/1.1 Georgia,"Times New Roman",serif;margin:0 0 8px;letter-spacing:-.01em}
+.lede{color:var(--mut);max-width:60ch;margin:0 0 28px}
+.grid{display:grid;gap:20px;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr)}
+@media(max-width:820px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:20px}
+label{font-weight:600;display:block;margin-bottom:8px}
+textarea{width:100%;min-height:200px;resize:vertical;border:1px solid var(--line);border-radius:4px;padding:12px;font:inherit;color:inherit}
+textarea:focus,button:focus-visible{outline:3px solid var(--steel);outline-offset:2px}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+button{font:inherit;cursor:pointer;border-radius:4px;border:1px solid var(--steel);background:#fff;color:var(--steel);padding:8px 12px}
+button.go{background:var(--steel);color:#fff;font-weight:600;padding:10px 18px}
+button:disabled{opacity:.6;cursor:wait}
+.hint{color:var(--mut);font-size:14px;margin:0 0 10px}
+.sheet{border-left:8px solid var(--line)}
+.sheet.scam{border-left-color:var(--red)}.sheet.sus{border-left-color:var(--amber)}.sheet.safe{border-left-color:var(--green)}
+.verdict{font:700 26px/1.2 Georgia,serif;margin:0}
+.score{color:var(--mut);margin:2px 0 12px}
+h2{font-size:16px;margin:18px 0 6px}
+ul{margin:0;padding-left:20px}li{margin:4px 0}
+q{background:#eef2f6;padding:1px 6px;border-radius:3px;font-family:ui-monospace,Menlo,monospace;font-size:14px}
+pre{white-space:pre-wrap;background:#eef2f6;border-radius:4px;padding:12px;font:13px/1.5 ui-monospace,Menlo,monospace;margin:6px 0}
+.empty{color:var(--mut)}.err{color:var(--red)}
+.b{padding:8px 12px;border-radius:6px;margin:6px 0;max-width:92%}.b.s{background:#f8e1df}.b.v{background:#dce9f4;margin-left:auto}.b small{display:block;color:var(--mut);font-size:12px}
+footer{margin-top:24px;color:var(--mut);font-size:14px}
+</style>
+</head>
+<body>
+<main>
+<h1>Is this message a scam?</h1>
+<p class="lede">Paste an SMS, WhatsApp message, email or call transcript. ScamTrap shows the warning signs, the scam it matches, what to do next, and a complaint you can send.</p>
+<div class="grid">
+  <section class="card">
+    <label for="msg">Message to check</label>
+    <p class="hint">Try an example, or paste your own. Nothing is stored.</p>
+    <textarea id="msg" placeholder="Paste the message here"></textarea>
+    <div class="row">
+      <button class="go" id="go">Check message</button>
+      <button data-s="0">Bank KYC example</button>
+      <button data-s="1">Police call example</button>
+      <button data-s="2">Normal message</button>
+    </div>
+  </section>
+  <section class="card sheet" id="out" aria-live="polite">
+    <p class="empty">Your result will appear here.</p>
+  </section>
+</div>
+<footer>If you already paid or shared an OTP, call 1930 now and tell your bank. Report at cybercrime.gov.in.</footer>
+</main>
+<script>
+// Set this to your deployed backend URL (see README).
+// Tip: add ?api=https://your-backend-url to the page address to test without editing this file.
+const API = new URLSearchParams(location.search).get("api") || ((location.hostname === "localhost" || location.hostname === "127.0.0.1")
+  ? "http://localhost:8000" : "https://YOUR-BACKEND.onrender.com");
+const SAMPLES = [
+  "Dear customer, your SBI account will be blocked today. Update KYC immediately at http://bit.ly/sbi-kyc or share the OTP sent to you.",
+  "This is CBI. A parcel in your name contains drugs. Stay on the video call and do not tell anyone, or you will be arrested. Transfer Rs 50000 to clear the case.",
+  "Hi, are we still on for lunch at 1pm tomorrow? I will bring the class notes."
+];
+const $ = id => document.getElementById(id), out = $("out");
+const el = (t, txt, cls) => { const e = document.createElement(t); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { $("msg").value = SAMPLES[b.dataset.s]; });
+
+function list(title, items, render) {
+  out.append(el("h2", title)); const ul = el("ul");
+  items.forEach(i => { const li = el("li"); render(li, i); ul.append(li); }); out.append(ul);
+}
+function show(r) {
+  out.replaceChildren(); out.className = "card sheet " + (r.level === "Likely scam" ? "scam" : r.level === "Suspicious" ? "sus" : "safe");
+  out.append(el("p", r.level, "verdict"), el("p", `Risk score ${r.score} out of 100`, "score"), el("p", r.explanation));
+  if (r.red_flags.length) list("Warning signs found", r.red_flags, (li, f) => { li.append(f.type + ": "); li.append(el("q", f.quote)); });
+  if (r.pattern && r.level !== "Looks safe") { out.append(el("h2", "Closest known scam")); out.append(el("p", r.pattern.name + ". " + r.pattern.description)); }
+  list(r.level === "Looks safe" ? "Advice" : "What to do now", r.actions, (li, a) => li.textContent = a);
+  if (r.complaint_draft) {
+    out.append(el("h2", "Complaint draft"), el("pre", r.complaint_draft));
+    const c = el("button", "Copy complaint"); c.onclick = () => navigator.clipboard.writeText(r.complaint_draft).then(() => c.textContent = "Copied"); out.append(c);
+    out.append(el("h2", "Fight back"), el("p", "Start a decoy that plays a confused victim and gets the scammer to reveal payment details. For safety, this demo runs against a built-in simulated scammer, never a real person.", "hint"));
+    const d = el("button", "Run decoy demo"); d.onclick = () => trap(d); out.append(d);
+  }
+}
+async function trap(btn) {
+  btn.disabled = true; btn.textContent = "Running decoy. This can take a moment.";
+  try {
+    const res = await fetch(API + "/trap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: $("msg").value.trim() }) });
+    if (!res.ok) throw new Error(res.status); const r = await res.json();
+    out.append(el("h2", "Decoy conversation (simulated scammer)"));
+    r.transcript.forEach(m => out.append(el("div", (m.role === "scammer" ? "Scammer: " : "Decoy: ") + m.text, "b " + (m.role === "scammer" ? "s" : "v"))));
+    list("Details the scammer revealed", Object.entries(r.indicators), (li, [k, v]) => li.textContent = k + ": " + v.join(", "));
+    out.append(el("h2", "Evidence pack"), el("pre", r.evidence_pack));
+    const c = el("button", "Copy evidence pack"); c.onclick = () => navigator.clipboard.writeText(r.evidence_pack).then(() => c.textContent = "Copied"); out.append(c);
+    btn.remove();
+  } catch (e) { btn.disabled = false; btn.textContent = "Run decoy demo"; out.append(el("p", "The decoy could not run. Try again in a moment.", "err")); }
+}
+$("go").onclick = async () => {
+  const text = $("msg").value.trim(); if (text.length < 5) { out.replaceChildren(el("p", "Paste a message of at least 5 characters.", "err")); return; }
+  $("go").disabled = true; out.replaceChildren(el("p", "Checking. The free server may take about 30 seconds to wake up.", "empty"));
+  try {
+    const res = await fetch(API + "/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    show(await res.json());
+  } catch (e) { out.replaceChildren(el("p", "Could not reach the analysis server. Check the API address in docs/index.html, then try again.", "err")); }
+  $("go").disabled = false;
+};
+</script>
+</body>
+</html>
